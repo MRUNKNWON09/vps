@@ -1,3 +1,6 @@
+import eventlet
+eventlet.monkey_patch()
+
 import os
 import threading
 import select
@@ -5,10 +8,8 @@ import fcntl
 import termios
 import struct
 import pty
-import tty
-import subprocess
 from flask import Flask, render_template, request, redirect, url_for, session, flash
-from flask_socketio import SocketIO, emit, disconnect
+from flask_socketio import SocketIO, emit
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -26,7 +27,6 @@ socketio = SocketIO(app, async_mode="eventlet")
 clients = {}
 
 def set_pty_size(fd, rows, cols):
-    # set terminal size for pty
     winsize = struct.pack("HHHH", rows, cols, 0, 0)
     fcntl.ioctl(fd, termios.TIOCSWINSZ, winsize)
 
@@ -46,17 +46,11 @@ def read_and_forward(sid, master_fd):
     except Exception as e:
         socketio.emit('pty-output', {'output': f'\n[connection error: {e}]\n'}, room=sid)
     finally:
-        # cleanup: notify client, close socket-side pty if exists
         try:
             os.close(master_fd)
         except Exception:
             pass
         socketio.emit('pty-output', {'output': '\n[session closed]\n'}, room=sid)
-        # disconnect client
-        try:
-            socketio.disconnect(sid)
-        except Exception:
-            pass
         clients.pop(sid, None)
 
 @app.route('/', methods=['GET'])
@@ -90,63 +84,37 @@ def terminal():
 
 @socketio.on('connect')
 def ws_connect():
-    sid = request.sid
-    # require session login
     if not session.get('logged_in'):
-        # refuse connection
         return False
 
 @socketio.on('start-pty')
 def start_pty(data):
-    """
-    Client requests to start a new PTY session.
-    We spawn /bin/bash (or /bin/sh fallback) with forkpty and forward IO.
-    """
     sid = request.sid
     if sid in clients:
         emit('pty-output', {'output': '\n[PTY already running]\n'})
         return
 
-    # create pty
-    try:
-        master_fd, slave_fd = pty.openpty()
-    except Exception as e:
-        emit('pty-output', {'output': f'\n[failed to open pty: {e}]\n'})
-        return
-
-    # set size if provided
     rows = int(data.get('rows', 24))
     cols = int(data.get('cols', 80))
+
+    # Use fork to create a real TTY session
+    pid, master_fd = pty.fork()
+    if pid == 0:
+        shell = os.environ.get('SHELL', '/bin/bash')
+        try:
+            os.execv(shell, [shell])
+        except Exception:
+            os._exit(1)
+
     try:
         set_pty_size(master_fd, rows, cols)
     except Exception:
         pass
 
-    # spawn shell
-    shell = os.environ.get('SHELL', '/bin/bash')
-    try:
-        # start subprocess attached to slave fd
-        proc = subprocess.Popen([shell], stdin=slave_fd, stdout=slave_fd, stderr=slave_fd, close_fds=True)
-    except Exception as e:
-        emit('pty-output', {'output': f'\n[failed to spawn shell: {e}]\n'})
-        os.close(master_fd)
-        try:
-            os.close(slave_fd)
-        except Exception:
-            pass
-        return
-
-    # close slave fd in parent
-    try:
-        os.close(slave_fd)
-    except Exception:
-        pass
-
-    # start reading thread
     t = threading.Thread(target=read_and_forward, args=(sid, master_fd), daemon=True)
-    clients[sid] = {'master_fd': master_fd, 'proc': proc, 'thread': t}
+    clients[sid] = {'master_fd': master_fd, 'pid': pid, 'thread': t}
     t.start()
-    emit('pty-output', {'output': f'\n[PTY started: shell {shell}]\n'})
+    emit('pty-output', {'output': f'\n[PTY started: shell /bin/bash]\n'})
 
 @socketio.on('resize')
 def on_resize(data):
@@ -177,7 +145,6 @@ def pty_input(data):
 @socketio.on('disconnect')
 def ws_disconnect():
     sid = request.sid
-    # cleanup
     entry = clients.pop(sid, None)
     if entry:
         try:
@@ -185,10 +152,9 @@ def ws_disconnect():
         except Exception:
             pass
         try:
-            entry['proc'].terminate()
+            os.kill(entry['pid'], 15)
         except Exception:
             pass
 
 if __name__ == '__main__':
-    # For local debug (not needed on Render)
     socketio.run(app, host='0.0.0.0', port=PORT)
