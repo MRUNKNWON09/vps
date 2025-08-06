@@ -38,4 +38,4 @@ ENV PYTHONUNBUFFERED=1
 EXPOSE 8000
 
 # Start the app using Gunicorn with Eventlet
-CMD ["gunicorn", "-k", "eventlet", "-w", "1", "app:app", "--bind", "0.0.0.0:8000"]
+CMD ["gunicorn", "-k", "gevent", "-w", "1", "app:app", "--bind", "0.0.0.0:8000"]
