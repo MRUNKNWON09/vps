@@ -1,5 +1,5 @@
 import gevent
-eventlet.monkey_patch()
+gevent.monkey_patch()
 
 import os
 import threading
