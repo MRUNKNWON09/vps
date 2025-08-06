@@ -1,5 +1,6 @@
-import gevent
-gevent.monkey_patch()
+
+from gevent import monkey
+monkey.patch_all()
 
 import os
 import threading
@@ -23,7 +24,6 @@ app = Flask(__name__, static_folder="static", template_folder="templates")
 app.secret_key = SECRET_KEY
 socketio = SocketIO(app, async_mode="gevent")
 
-# Keep mapping of socket session -> pty master fd & thread
 clients = {}
 
 def set_pty_size(fd, rows, cols):
@@ -31,7 +31,6 @@ def set_pty_size(fd, rows, cols):
     fcntl.ioctl(fd, termios.TIOCSWINSZ, winsize)
 
 def read_and_forward(sid, master_fd):
-    """Read from pty master and forward to client socket."""
     try:
         while True:
             rf, _, _ = select.select([master_fd], [], [], 0.1)
@@ -97,7 +96,6 @@ def start_pty(data):
     rows = int(data.get('rows', 24))
     cols = int(data.get('cols', 80))
 
-    # Use fork to create a real TTY session
     pid, master_fd = pty.fork()
     if pid == 0:
         shell = os.environ.get('SHELL', '/bin/bash')
