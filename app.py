@@ -21,7 +21,7 @@ PORT = int(os.environ.get("PORT", 8000))
 
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.secret_key = SECRET_KEY
-socketio = SocketIO(app, async_mode="eventlet")
+socketio = SocketIO(app, async_mode="gevent")
 
 # Keep mapping of socket session -> pty master fd & thread
 clients = {}
