@@ -1,102 +1,92 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <title>Web Terminal</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/xterm/4.19.0/xterm.min.css" />
-  <style>
-    body {
-      background: #0d1117;
-      color: white;
-    }
-    #terminal-container {
-      background: #000;
-      border-radius: 12px;
-      padding: 10px;
-      box-shadow: 0 0 15px rgba(0,0,0,0.6);
-    }
-    #terminal {
-      height: 70vh;
-      width: 100%;
-    }
-    .navbar {
-      background-color: #161b22 !important;
-      border-bottom: 1px solid #30363d;
-    }
-    .navbar-brand {
-      color: #58a6ff !important;
-      font-weight: bold;
-    }
-    .btn-outline-secondary {
-      color: #c9d1d9;
-      border-color: #30363d;
-    }
-    .btn-outline-secondary:hover {
-      background-color: #21262d;
-      color: #58a6ff;
-      border-color: #58a6ff;
-    }
-  </style>
+    <meta charset="utf-8">
+    <title>Web Terminal</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm/css/xterm.css" />
+    <style>
+        body {
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            margin: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            font-family: Arial, sans-serif;
+            color: white;
+        }
+        header {
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            font-size: 18px;
+            font-weight: bold;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        #terminal-container {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        #terminal {
+            width: 90%;
+            height: 90%;
+            background-color: #1e1e1e;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0,0,0,0.6);
+            padding: 10px;
+        }
+        .xterm {
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
 </head>
 <body>
-<nav class="navbar navbar-dark">
-  <div class="container-fluid">
-    <a class="navbar-brand">⚡ Web Shell</a>
-    <div>
-      <a href="/logout" class="btn btn-sm btn-outline-secondary">Logout</a>
+    <header>💻 Secure Web Terminal</header>
+    <div id="terminal-container">
+        <div id="terminal"></div>
     </div>
-  </div>
-</nav>
-<div class="container mt-4">
-  <div id="terminal-container">
-    <div id="terminal"></div>
-  </div>
-  <p class="text-muted mt-3 small">
-    💡 Tip: Use commands like <code>ls</code>, <code>pwd</code>, <code>top</code>.  
-    This terminal runs on your server container.
-  </p>
-</div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/4.19.0/xterm.min.js"></script>
-<script>
-  const socket = io();
+    <script src="https://cdn.jsdelivr.net/npm/xterm/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit/lib/xterm-addon-fit.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+        const term = new Terminal({
+            cursorBlink: true,
+            fontSize: 16,
+            theme: {
+                background: '#1e1e1e',
+                foreground: '#00ff99',
+                cursor: '#00ff99',
+                selection: '#00ff9944'
+            }
+        });
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+        term.open(document.getElementById('terminal'));
+        fitAddon.fit();
 
-  const term = new Terminal({
-    cols: 80,
-    rows: 24,
-    theme: {
-      background: '#000000',
-      foreground: '#00ff66',
-      cursor: '#00ff66'
-    },
-    fontFamily: 'monospace',
-    fontSize: 14
-  });
-  term.open(document.getElementById('terminal'));
+        const socket = io();
 
-  function startPty() {
-    const cols = term.cols;
-    const rows = term.rows;
-    socket.emit('start-pty', {cols: cols, rows: rows});
-  }
+        function sendResize() {
+            socket.emit('resize', {cols: term.cols, rows: term.rows});
+        }
+        window.addEventListener('resize', () => {
+            fitAddon.fit();
+            sendResize();
+        });
 
-  socket.on('connect', () => {
-    startPty();
-  });
+        term.onData(data => {
+            socket.emit('pty-input', {input: data});
+        });
 
-  socket.on('pty-output', (data) => {
-    term.write(data.output);
-  });
+        socket.on('pty-output', function(data) {
+            term.write(data.output);
+        });
 
-  term.onData(function(data) {
-    socket.emit('pty-input', {input: data});
-  });
-
-  window.addEventListener('resize', () => {
-    socket.emit('resize', {cols: term.cols, rows: term.rows});
-  });
-</script>
+        socket.emit('start-pty', {cols: term.cols, rows: term.rows});
+    </script>
 </body>
-  </html>
+      </html>
