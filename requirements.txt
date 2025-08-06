@@ -1,5 +1,5 @@
-Flask
-Flask-SocketIO
-gevent
+flask
+flask-socketio
+gevent==23.9.1
 gunicorn
 python-dotenv
